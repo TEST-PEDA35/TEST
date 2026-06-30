@@ -1,0 +1,366 @@
+<!DOCTYPE html>
+<html lang="fr">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Mots croisés — Test d'intégration</title>
+<style>
+  :root {
+    --bg: #1c2430;
+    --paper: #f7f3ea;
+    --ink: #1c2430;
+    --line: #c9c0ab;
+    --gold: #c79a44;
+    --green: #4f7942;
+    --red: #b5483d;
+  }
+
+  * { box-sizing: border-box; }
+
+  body {
+    margin: 0;
+    background: var(--bg);
+    font-family: system-ui, -apple-system, "Segoe UI", sans-serif;
+    color: var(--ink);
+    display: flex;
+    justify-content: center;
+    padding: 28px 16px;
+  }
+
+  .puzzle-card {
+    background: var(--paper);
+    border-radius: 4px;
+    box-shadow: 0 18px 40px rgba(0,0,0,0.35);
+    padding: 28px 28px 24px;
+    width: 100%;
+    max-width: 480px;
+  }
+
+  h1 {
+    font-family: Georgia, "Times New Roman", serif;
+    font-size: 26px;
+    letter-spacing: 0.5px;
+    margin: 0 0 2px;
+  }
+
+  .subtitle {
+    margin: 0 0 20px;
+    font-size: 13px;
+    color: #6b6354;
+  }
+
+  .grid {
+    display: grid;
+    gap: 4px;
+    justify-content: center;
+    margin-bottom: 16px;
+  }
+
+  .cell {
+    position: relative;
+    width: 52px;
+    height: 52px;
+  }
+
+  .cell.blocked {
+    background: transparent;
+  }
+
+  .cell input {
+    width: 100%;
+    height: 100%;
+    border: 1.5px solid var(--ink);
+    background: #fffdf8;
+    text-align: center;
+    font-size: 22px;
+    font-weight: 600;
+    text-transform: uppercase;
+    color: var(--ink);
+    border-radius: 2px;
+    padding: 0;
+  }
+
+  .cell input:focus {
+    outline: 2px solid var(--gold);
+    outline-offset: -2px;
+  }
+
+  .cell input.correct {
+    background: #e7efe2;
+    border-color: var(--green);
+    color: var(--green);
+  }
+
+  .cell input.incorrect {
+    background: #f6e6e3;
+    border-color: var(--red);
+    color: var(--red);
+  }
+
+  .cell .num {
+    position: absolute;
+    top: 1px;
+    left: 3px;
+    font-family: "Courier New", monospace;
+    font-size: 10px;
+    color: var(--gold);
+    font-weight: 700;
+    pointer-events: none;
+  }
+
+  .status {
+    text-align: center;
+    min-height: 20px;
+    font-size: 14px;
+    margin-bottom: 14px;
+    font-weight: 600;
+  }
+
+  .actions {
+    display: flex;
+    gap: 8px;
+    justify-content: center;
+    margin-bottom: 22px;
+    flex-wrap: wrap;
+  }
+
+  button {
+    border: 1.5px solid var(--ink);
+    background: var(--paper);
+    color: var(--ink);
+    padding: 8px 14px;
+    font-size: 13px;
+    font-weight: 600;
+    border-radius: 3px;
+    cursor: pointer;
+    font-family: inherit;
+  }
+
+  button:hover { background: var(--ink); color: var(--paper); }
+
+  .clues {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    gap: 18px;
+    border-top: 1px solid var(--line);
+    padding-top: 16px;
+  }
+
+  .clue-col h2 {
+    font-family: "Courier New", monospace;
+    font-size: 12px;
+    text-transform: uppercase;
+    letter-spacing: 1px;
+    color: var(--gold);
+    margin: 0 0 8px;
+  }
+
+  .clue-col ol {
+    margin: 0;
+    padding-left: 18px;
+    font-size: 13px;
+    line-height: 1.5;
+  }
+
+  @media (max-width: 380px) {
+    .cell { width: 40px; height: 40px; }
+    .cell input { font-size: 17px; }
+    .clues { grid-template-columns: 1fr; }
+  }
+</style>
+</head>
+<body>
+  <div class="puzzle-card">
+    <h1>Mots croisés</h1>
+    <p class="subtitle">Petite grille de test — 3 mots</p>
+
+    <div class="grid" id="grid"></div>
+    <div class="status" id="status"></div>
+
+    <div class="actions">
+      <button id="checkBtn">Vérifier</button>
+      <button id="revealBtn">Voir la solution</button>
+      <button id="resetBtn">Recommencer</button>
+    </div>
+
+    <div class="clues">
+      <div class="clue-col">
+        <h2>Horizontalement</h2>
+        <ol id="acrossClues"></ol>
+      </div>
+      <div class="clue-col">
+        <h2>Verticalement</h2>
+        <ol id="downClues"></ol>
+      </div>
+    </div>
+  </div>
+
+<script>
+  const WORDS = [
+    { number: 1, dir: 'across', row: 0, col: 0, answer: 'LUNE', clue: "Satellite qui éclaire nos nuits" },
+    { number: 1, dir: 'down',   row: 0, col: 0, answer: 'LIT',  clue: "On s'y allonge pour dormir" },
+    { number: 2, dir: 'across', row: 2, col: 0, answer: 'TOIT', clue: "Il protège la maison de la pluie" },
+  ];
+
+  // --- Construction de la grille à partir des mots ---
+  const cellMap = {}; // "r-c" -> { letter, numbers:Set, members:[{wordIndex,pos}] }
+
+  WORDS.forEach((word, wi) => {
+    for (let i = 0; i < word.answer.length; i++) {
+      const r = word.dir === 'down' ? word.row + i : word.row;
+      const c = word.dir === 'across' ? word.col + i : word.col;
+      const key = r + '-' + c;
+      if (!cellMap[key]) cellMap[key] = { r, c, letter: word.answer[i], numbers: new Set(), members: [] };
+      cellMap[key].members.push({ wordIndex: wi, pos: i });
+      if (i === 0) cellMap[key].numbers.add(word.number);
+    }
+  });
+
+  const coords = Object.values(cellMap);
+  const minR = Math.min(...coords.map(c => c.r));
+  const maxR = Math.max(...coords.map(c => c.r));
+  const minC = Math.min(...coords.map(c => c.c));
+  const maxC = Math.max(...coords.map(c => c.c));
+  const nRows = maxR - minR + 1;
+  const nCols = maxC - minC + 1;
+
+  const gridEl = document.getElementById('grid');
+  gridEl.style.gridTemplateColumns = `repeat(${nCols}, 52px)`;
+  gridEl.style.gridTemplateRows = `repeat(${nRows}, 52px)`;
+
+  for (let r = minR; r <= maxR; r++) {
+    for (let c = minC; c <= maxC; c++) {
+      const key = r + '-' + c;
+      const data = cellMap[key];
+      const cellDiv = document.createElement('div');
+      cellDiv.className = 'cell' + (data ? '' : ' blocked');
+
+      if (data) {
+        if (data.numbers.size) {
+          const num = document.createElement('span');
+          num.className = 'num';
+          num.textContent = [...data.numbers].join(',');
+          cellDiv.appendChild(num);
+        }
+        const input = document.createElement('input');
+        input.maxLength = 1;
+        input.autocomplete = 'off';
+        input.id = 'cell-' + key;
+        input.dataset.r = r;
+        input.dataset.c = c;
+        cellDiv.appendChild(input);
+      }
+      gridEl.appendChild(cellDiv);
+    }
+  }
+
+  // --- Navigation clavier ---
+  function focusCell(r, c) {
+    const el = document.getElementById('cell-' + r + '-' + c);
+    if (el) el.focus();
+  }
+
+  // direction courante par cellule de départ : on privilégie 'across', sinon 'down'
+  function primaryDirOf(key) {
+    const members = cellMap[key].members;
+    const hasAcross = members.some(m => WORDS[m.wordIndex].dir === 'across');
+    return hasAcross ? 'across' : 'down';
+  }
+
+  document.querySelectorAll('.cell input').forEach(input => {
+    input.addEventListener('input', () => {
+      input.value = input.value.toUpperCase().replace(/[^A-ZÀ-Ÿ]/g, '');
+      input.classList.remove('correct', 'incorrect');
+      const r = +input.dataset.r, c = +input.dataset.c;
+      const dir = primaryDirOf(r + '-' + c);
+      const next = dir === 'across' ? [r, c + 1] : [r + 1, c];
+      if (input.value) focusCell(next[0], next[1]);
+      sendHeight();
+    });
+
+    input.addEventListener('keydown', (e) => {
+      const r = +input.dataset.r, c = +input.dataset.c;
+      if (e.key === 'Backspace' && !input.value) {
+        const dir = primaryDirOf(r + '-' + c);
+        const prev = dir === 'across' ? [r, c - 1] : [r - 1, c];
+        focusCell(prev[0], prev[1]);
+      } else if (e.key === 'ArrowRight') focusCell(r, c + 1);
+      else if (e.key === 'ArrowLeft') focusCell(r, c - 1);
+      else if (e.key === 'ArrowDown') focusCell(r + 1, c);
+      else if (e.key === 'ArrowUp') focusCell(r - 1, c);
+    });
+  });
+
+  // --- Listes de clues ---
+  function renderClues(dir, targetId) {
+    const list = document.getElementById(targetId);
+    WORDS.filter(w => w.dir === dir)
+      .sort((a, b) => a.number - b.number)
+      .forEach(w => {
+        const li = document.createElement('li');
+        li.textContent = `${w.clue} (${w.answer.length})`;
+        list.appendChild(li);
+      });
+  }
+  renderClues('across', 'acrossClues');
+  renderClues('down', 'downClues');
+
+  // --- Vérification ---
+  const statusEl = document.getElementById('status');
+
+  document.getElementById('checkBtn').addEventListener('click', () => {
+    let total = 0, correct = 0;
+    Object.values(cellMap).forEach(({ r, c, letter }) => {
+      const input = document.getElementById('cell-' + r + '-' + c);
+      total++;
+      if (!input.value) return;
+      if (input.value === letter) {
+        input.classList.add('correct');
+        input.classList.remove('incorrect');
+        correct++;
+      } else {
+        input.classList.add('incorrect');
+        input.classList.remove('correct');
+      }
+    });
+    statusEl.textContent = correct === total
+      ? '🎉 Bravo, tout est juste !'
+      : `${correct} / ${total} lettres correctes`;
+    sendHeight();
+  });
+
+  document.getElementById('revealBtn').addEventListener('click', () => {
+    Object.values(cellMap).forEach(({ r, c, letter }) => {
+      const input = document.getElementById('cell-' + r + '-' + c);
+      input.value = letter;
+      input.classList.add('correct');
+      input.classList.remove('incorrect');
+    });
+    statusEl.textContent = 'Solution affichée';
+    sendHeight();
+  });
+
+  document.getElementById('resetBtn').addEventListener('click', () => {
+    Object.values(cellMap).forEach(({ r, c }) => {
+      const input = document.getElementById('cell-' + r + '-' + c);
+      input.value = '';
+      input.classList.remove('correct', 'incorrect');
+    });
+    statusEl.textContent = '';
+    sendHeight();
+  });
+
+  // --- Communication de la hauteur au parent (utile si la page hôte écoute) ---
+  function sendHeight() {
+    try {
+      window.parent.postMessage(
+        { type: 'iframeResize', height: document.documentElement.scrollHeight },
+        '*'
+      );
+    } catch (e) {}
+  }
+  window.addEventListener('load', sendHeight);
+  window.addEventListener('resize', sendHeight);
+</script>
+</body>
+</html>
